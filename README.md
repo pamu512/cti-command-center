@@ -1,6 +1,8 @@
 # CTI Command Center
 
-**CTI Command Center** is a desktop-first **cyber threat intelligence (CTI)** workspace: a **Tauri 2** shell hosts a **Next.js 16** UI, while **Rust** owns the SQLite vault, **embedded local** semantic vector storage (SQLite under app data, no separate vector server), **Ollama**-backed copilot flows, and safe **Tauri IPC** to local services (no direct `fetch()` from the WebView to loopback for core CTI operations).
+**CTI Command Center** is a desktop-first **cyber threat intelligence (CTI)** workspace. The product is a **SQLite vault**, **Tauri IPC**, and an **Ollama**-backed investigation copilot (plus local semantic search and asset↔CVE correlation in the host). A **Tauri 2** shell hosts a **Next.js 16** UI; **Rust** owns the vault, **embedded local** semantic vector storage (SQLite under app data, no separate vector server), copilot flows, and IPC to those host services (no direct `fetch()` from the WebView to loopback for vault / copilot / search).
+
+ASM / CVE / IOC (and sibling) folders under `src-tauri/resources/scripts/` are **optional bundled feature runners**. They are not the product and not a required install.
 
 ---
 
@@ -16,7 +18,7 @@
 - [Optional local services](#optional-local-services)
 - [Tauri IPC commands](#tauri-ipc-commands)
 - [Environment variables](#environment-variables)
-- [Python feature projects](#python-feature-projects)
+- [Optional feature runners](#optional-feature-runners)
 - [Headless CLI (Rust)](#headless-cli-rust)
 - [Packaging notes](#packaging-notes)
 - [Security](#security)
@@ -27,17 +29,25 @@
 
 ## Features
 
+**Product** (the desk):
+
 | Area | Description |
 |------|-------------|
-| **Vault** | Single SQLite file at an **absolute** path from `vault_db::get_vault_path` (`CTI_DB_PATH`, default under OS app data e.g. macOS `~/Library/Application Support/<bundle-id>/cti-app/cti_vault.db`): IOC records, CVE data, ASM assets, etc. Migrations and WAL in Rust (`vault_db`). |
-| **Parameterized search** | `search_vault` — fixed SQL templates only; filters from the UI are bound as parameters (no raw SQL from the client). |
-| **Semantic IOC search** | Embeddings via **Ollama** (`/api/embeddings`, default `nomic-embed-text`), vectors in a **local SQLite** store (`threat_intel` table in `vector_vault/vectors.sqlite`), hydration from the vault. Command: `semantic_threat_search`. |
+| **SQLite vault** | Single SQLite file at an **absolute** path from `vault_db::get_vault_path` (`CTI_DB_PATH`, default under OS app data e.g. macOS `~/Library/Application Support/<bundle-id>/cti-app/cti_vault.db`): IOC records, CVE data, ASM assets, etc. Migrations and WAL in Rust (`vault_db`). |
+| **Tauri IPC** | UI talks to the Rust host only (`invoke`) for vault, search, copilot, and correlation. |
 | **Investigation Copilot** | **LangGraph**-style flow in TypeScript: route query → semantic / structured vault tools → synthesis; Ollama chat proxied through **`invoke_local_llm`** (host `reqwest`). |
-| **Dashboard** | Main page metrics over IPC: total IOCs, distinct assets in `asset_cve_mapping`, local vector store health (`get_dashboard_metrics`). |
+| **Parameterized search** | `search_vault` — fixed SQL templates only; filters from the UI are bound as parameters (no raw SQL from the client). |
+| **Semantic search** | Embeddings via **Ollama** (`/api/embeddings`, default `nomic-embed-text`), vectors in a **local SQLite** store (`threat_intel` table in `vector_vault/vectors.sqlite`), hydration from the vault. Command: `semantic_threat_search`. |
 | **Asset ↔ CVE correlation** | `cpe_matcher` + `run_asset_cve_correlation` + scheduled job: CPE / keyword matching between `asm_assets` and `cve_data`. |
+| **Dashboard** | Main page metrics over IPC: total IOCs, distinct assets in `asset_cve_mapping`, local vector store health (`get_dashboard_metrics`). |
 | **Graph pivot** | One-hop IOC graph from the vault (`get_pivot_graph`). |
-| **Feature runners** | Run bundled Python/sh projects with workspace env injection (`run_feature_v2`, `run_project_script`). |
-| **CSV bridge** | Post-run sync into the vault via `ingest_csv_vault` / `shared_utils/ingestor.py`. |
+
+**Optional sidecars** (not the product, not a required install):
+
+| Area | Description |
+|------|-------------|
+| **Feature runners** | ASM / CVE / IOC and sibling folders under `src-tauri/resources/scripts/`. Optional bundled runners (`run_feature_v2`, `run_project_script`); skip them and the vault / IPC / copilot desk still stands. |
+| **CSV bridge** | Post-run sync into the vault via `ingest_csv_vault` / `shared_utils/ingestor.py` when you use a runner. |
 
 ---
 
@@ -64,7 +74,7 @@ flowchart TB
   subgraph disk [Local disk]
     DB[(vault.db · canonical path)]
     VecDb[(vector_vault/vectors.sqlite)]
-    Scripts[Bundled scripts/]
+    Scripts[Optional feature runners]
   end
 
   subgraph opt [Optional daemons]
@@ -88,7 +98,7 @@ flowchart TB
 ```
 
 - **UI** talks to **Rust only** through `@tauri-apps/api` `invoke` for vault, vectors, LLM proxy, dashboard, etc.
-- **Ollama** is reached from the **Rust process** for chat and embeddings; vectors stay on disk in the host’s app data tree. The WebView does not open arbitrary loopback `fetch` for production-critical CTI paths.
+- **Ollama** is reached from the **Rust process** for chat and embeddings; vectors stay on disk in the host’s app data tree. The WebView does not open arbitrary loopback `fetch` for vault / copilot / search paths.
 
 ---
 
@@ -99,7 +109,7 @@ flowchart TB
 | **Node.js** | LTS recommended; matches Next 16 / React 19 toolchain. |
 | **Rust** | `rust-version` in `src-tauri/Cargo.toml` (currently **1.88+**). Install via [rustup](https://rustup.rs/). |
 | **Platform kits** | Follow [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (WebView2 on Windows, GTK/WebKit on Linux, Xcode CLTs on macOS). |
-| **Python 3** | Host `python3` / `python` for feature venvs (not embedded in the app binary). |
+| **Python 3** | Optional. Needed only if you run a bundled feature runner (host `python3` / `python` for those venvs; not embedded in the app binary). Not required for the vault, IPC, or copilot. |
 | **Ollama** (optional) | For LLM + embeddings; default `http://127.0.0.1:11434`. |
 
 ---
@@ -133,7 +143,7 @@ On first launch, the app creates an app-data layout (see `cti_config`) and mirro
 | `npm run build:python` | PyInstaller ingestion sidecars → `src-tauri/binaries/` (Rust-style triple suffix; see **`build-sidecars.js`**). Use a project **`.venv`** with PyInstaller + script `requirements.txt` installed. |
 | `npm run lint` | ESLint. |
 | `npm run tauri dev` | Tauri dev with `beforeDevCommand: npm run dev`. |
-| `npm run tauri:build` | **`build:python`** then **`tauri build`** — use this for release bundles that embed frozen Python binaries (`bundle.externalBin`). |
+| `npm run tauri:build` | **`build:python`** then **`tauri build`** — only if you want a release bundle that embeds optional frozen Python sidecars (`bundle.externalBin`). |
 | `npm run tauri build` | Same as **`tauri`** CLI only (does not run **`build:python`**). |
 
 **Next.js:** This repo targets **Next.js 16**; APIs and conventions may differ from older Next docs. Prefer `node_modules/next/dist/docs/` when unsure.
@@ -159,7 +169,7 @@ Artifacts land under `src-tauri/target/release/bundle/` (platform-specific: `.ap
 
 Bundled resources include:
 
-- `resources/scripts/**/*` → `scripts/` in the app bundle  
+- `resources/scripts/**/*` → `scripts/` in the app bundle (optional feature runners; not the product)
 - `resources/sqlite_extensions/**/*` → `sqlite_extensions/` (optional loadable SQLite extensions; see `build.rs` rerun hints)
 
 macOS uses **`entitlements/macos/production.entitlements.plist`** and merges **`Info.plist`** for local-network usage strings. CSP and `connect-src` are defined in **`tauri.conf.json`** for controlled WebView access.
@@ -168,7 +178,7 @@ macOS uses **`entitlements/macos/production.entitlements.plist`** and merges **`
 
 ## Workspace & data model
 
-- A **workspace** is a directory (often your monorepo root or a dedicated CTI folder) that contains feature project folders (e.g. `CVE_Project_NVD`, `ASM-fetch-main`, `IOCs-crawler-main`, …). The **SQLite vault file** is not workspace-relative: Rust always opens `vault_db::get_vault_path()`.
+- A **workspace** is a directory the host can resolve for optional feature runners. The **SQLite vault file** is not workspace-relative: Rust always opens `vault_db::get_vault_path()`.
 
 **Canonical tables** (see `vault_db.rs`, migrations under `src-tauri/resources/migrations/`):
 
@@ -235,12 +245,14 @@ Feature-specific `.env` files under the workspace may supply RethinkDB hosts, et
 
 ---
 
-## Python feature projects
+## Optional feature runners
 
-Bundled layout is described in **`src-tauri/resources/scripts/README.txt`**:
+`src-tauri/resources/scripts/` still contains project folders such as `ASM-fetch-main`, `CVE_Project_NVD`, `IOCs-crawler-main`, `Intelx_Crawler`, and siblings. They are **optional bundled feature runners**: invoke them via `run_feature_v2` / `run_project_script` if you want those sidecars. They are **not** the product, **not** a required install, and **not** modules you must enable. The folders remain in the tree for optional use.
 
-- Ship folders such as `Intelx_Crawler`, `CVE_Project_NVD`, `ASM-fetch-main`, … under `resources/scripts/` (or set **`resourceScriptsFallback`** in `cti-app/config.json` for dev).
-- The app **does not embed CPython**; it creates per-feature **venvs** under `%APPDATA%/…/cti-app/python_env/` using the host interpreter.
+Layout notes (see **`src-tauri/resources/scripts/README.txt`** for runner details):
+
+- Dev fallback: set **`resourceScriptsFallback`** in `cti-app/config.json` if you point at a scripts tree outside the bundle.
+- The app **does not embed CPython**. If you run a feature, it creates a per-feature **venv** under `%APPDATA%/…/cti-app/python_env/` using the host interpreter.
 - Shared DB access from Python: **`shared_utils/db_manager.py`** with `CTI_DB_PATH` aligned to the Rust vault.
 
 Optional **PyOxidizer** layout for a single-file ML sidecar lives under **`packaging/pyoxidizer-ml/pyoxidizer.bzl`** (invoke with the PyOxidizer CLI when you need a frozen Python binary).
@@ -278,7 +290,7 @@ The library exposes **`run_headless_cli`** for automation (CSV ingest, etc.) wit
 │   └── lib/                  # TS helpers (vault-search, copilot-langgraph, …)
 ├── src-tauri/                # Tauri + Rust
 │   ├── src/                  # lib.rs, vault_*, vector_db, cpe_matcher, dashboard, …
-│   ├── resources/            # scripts/, sqlite_extensions/, migrations/
+│   ├── resources/            # optional scripts/, sqlite_extensions/, migrations/
 │   ├── capabilities/
 │   ├── entitlements/
 │   ├── tauri.conf.json
