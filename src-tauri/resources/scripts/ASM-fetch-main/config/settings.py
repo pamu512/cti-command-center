@@ -20,7 +20,7 @@ class Settings:
     RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
     SHODAN_API_KEY = os.getenv("SHODAN_API_KEY", "")
     FOFA_API_KEY = os.getenv("FOFA_API_KEY", "")
-    PENTEST_TOOLS_TOKEN = os.getenv("PENTEST_TOOLS_TOKEN", "3wEqNzxAbSQcWdn2qQYnPbQTvUwtLCzCA4D417Ur7872786a")
+    PENTEST_TOOLS_TOKEN = os.getenv("PENTEST_TOOLS_TOKEN", "")
     # Prefer a file containing one key per line. Otherwise fall back to comma-separated env var.
     _st_keys_file = os.getenv("SECURITYTRAILS_API_KEYS_FILE", "")
     if _st_keys_file and pathlib.Path(_st_keys_file).is_file():

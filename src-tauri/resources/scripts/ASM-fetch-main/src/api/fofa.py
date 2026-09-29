@@ -87,8 +87,7 @@ def get_fofa_subdomains(domain: str, key: str = None, size: int = 10000, fields:
     except Exception:
         logger.debug("FOFA could not inspect CA bundle")
 
-    # Try with retries using certifi bundle. If all retries fail with SSL issues,
-    # fall back to an insecure request (verify=False) as a last resort with a warning.
+    # Try with retries using the resolved CA bundle. On SSL/request failure, log and return [].
     data = None
     last_exc = None
     for attempt in range(1, 4):
@@ -110,20 +109,9 @@ def get_fofa_subdomains(domain: str, key: str = None, size: int = 10000, fields:
         # backoff
         time.sleep(1 * attempt)
 
-    if data is None and last_exc is not None:
-        # try insecurely as a last resort (not recommended for production)
-        try:
-            logger.warning("FOFA: falling back to verify=False for domain %s (insecure).", domain)
-            resp = circuit_protect(
-                "asm_fofa",
-                lambda: requests.get(FOFA_URL, params=params, timeout=15, verify=False),
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            logger.warning("FOFA request failed (even insecure) for %s: %s", domain, e)
-            return []
     if data is None:
+        if last_exc is not None:
+            logger.warning("FOFA request failed for %s: %s", domain, last_exc)
         return []
 
     results = data.get("results") or []
